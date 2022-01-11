@@ -1,32 +1,81 @@
-const { ApolloServer } = require('apollo-server')
-const mongoose = require('mongoose')
+const cors = require('cors')
 const dotenv = require('dotenv')
-const typeDefs = require('./graphql/typeDefs')
+const express = require('express')
+const mongoose = require('mongoose')
+const { createServer } = require('http')
+const { execute, subscribe } = require('graphql')
+const { ApolloServer } = require('apollo-server-express')
+const {
+  ApolloServerPluginLandingPageGraphQLPlayground,
+} = require('apollo-server-core')
+const { makeExecutableSchema } = require('@graphql-tools/schema')
+const { SubscriptionServer } = require('subscriptions-transport-ws')
+
+// graphql
+const typeDefs = require('./graphql/typeDefs.js')
 const resolvers = require('./graphql/resolver')
+//const { MONGODB } = require('./config.js')
 
 dotenv.config()
+;(async function () {
+  const port = process.env.PORT || 4000
 
-const port = process.env.PORT || 4000
+  const app = express()
 
-const server = new ApolloServer({
-  typeDefs,
-  resolvers,
-  context: ({ req }) => ({ req }),
-})
+  const corsOptions = {
+    origin: '*',
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
+  }
+  app.use(cors(corsOptions))
 
-const localMongoDB = 'mongodb://localhost:27017/'
-mongoose
-  .connect(localMongoDB, {
-    dbName: 'chat-app',
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
+  const httpServer = createServer(app)
+
+  const schema = makeExecutableSchema({
+    typeDefs,
+    resolvers,
   })
-  .then(() => {
-    return server.listen({ port })
+
+  const subscriptionServer = SubscriptionServer.create(
+    { schema, execute, subscribe },
+    { server: httpServer, path: '/graphql' }
+  )
+
+  const server = new ApolloServer({
+    cors: false,
+    schema,
+    plugins: [
+      ApolloServerPluginLandingPageGraphQLPlayground(),
+      {
+        async serverWillStart() {
+          return {
+            async drainServer() {
+              subscriptionServer.close()
+            },
+          }
+        },
+      },
+    ],
+    context: ({ req }) => ({ req }),
   })
-  .then((res) => {
-    console.log(`Server running on ${res.url}`)
+
+  await server.start().then(() => {
+    server.applyMiddleware({ app, cors: false })
   })
-  .catch((err) => {
-    console.log(err)
-  })
+
+  const localMongoDB = 'mongodb://localhost:27017/'
+  // live mongoDb => process.env.MONGO_URL
+
+  mongoose
+    .connect(localMongoDB, {
+      dbName: 'chat-app',
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    })
+    .catch((err) => {
+      console.log(err)
+    })
+
+  httpServer.listen(port, () => console.log(`Server Running On Port: ${port}`))
+})()

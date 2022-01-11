@@ -1,4 +1,4 @@
-const { gql } = require('apollo-server')
+const { gql } = require('apollo-server-express')
 
 module.exports = gql`
   type User {
@@ -20,6 +20,7 @@ module.exports = gql`
   type Message {
     id: ID!
     user: String!
+    username: String!
     content: String!
   }
 
@@ -41,5 +42,9 @@ module.exports = gql`
     ): User!
     deleteUser(userId: ID!): String!
     createMessage(content: String!): Message!
+  }
+
+  type Subscription {
+    messageCreated: Message
   }
 `
